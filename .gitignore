@@ -1,0 +1,9 @@
+node_modules/
+.env
+.env.local
+*.log
+# large converted persona pools and run outputs
+/personas.jsonl
+/persona/
+trials*.jsonl
+out/

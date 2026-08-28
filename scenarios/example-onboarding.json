@@ -1,0 +1,8 @@
+{
+  "id": "example-onboarding-json",
+  "env": "survey",
+  "system": "You are trying a new mobile savings app called Seedwise. You just installed it and opened it for the first time.",
+  "task": "Walk through first-run onboarding as you actually would: 1) welcome screen with 'Get started'. 2) sign in with email or Apple. 3) three feature screens you must swipe through. 4) a screen requiring you to connect your bank before seeing anything. 5) a notifications permission prompt. Then the home screen. Decide at each step whether you continue or bail, and why. Your 'answer' must be either 'completed onboarding' or 'abandoned at step N'.",
+  "cohort": { "patience": ["low", "medium"] },
+  "segmentBy": ["techSavvy", "patience"]
+}
