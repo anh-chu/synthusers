@@ -8,7 +8,7 @@ import {
   type TrialResult,
 } from "./types.js";
 
-function personaSystem(persona: Persona, scenario: Scenario): string {
+export function personaSystem(persona: Persona, scenario: Scenario): string {
   return [
     `You are role-playing a specific person interacting with a product. Stay in character at all times. React the way THIS person genuinely would, including impatience, confusion, or delight. Do not be a helpful assistant; be this user.`,
     ``,
@@ -22,7 +22,7 @@ function personaSystem(persona: Persona, scenario: Scenario): string {
   ].join("\n");
 }
 
-const REPORT_INSTRUCTION = `Now step out of the interaction and report honestly as this person. Base every field ONLY on what actually happened above. rating is 1 (terrible) to 5 (great) from this person's point of view. List concrete frictions you hit; empty if none. succeeded = did YOU accomplish the task.`;
+export const REPORT_INSTRUCTION = `Now step out of the interaction and report honestly as this person. Base every field ONLY on what actually happened above. rating is 1 (terrible) to 5 (great) from this person's point of view. List concrete frictions you hit; empty if none. succeeded = did YOU accomplish the task.`;
 
 /** Survey env: single-shot. Persona reads the task and self-reports. */
 async function runSurvey(persona: Persona, scenario: Scenario): Promise<TrialResult> {

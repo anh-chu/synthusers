@@ -35,6 +35,21 @@ Flags: `--size N` (default 100 on the MatrAIx pool; every match on a JSONL pool)
 `--segment field` (repeatable breakdown), `--out trials.jsonl` (dump every
 transcript + report). Run with no command for full usage.
 
+## Without an API key (agent harnesses)
+
+If an agent (Claude Code, pi, dsh, ...) drives this, it can play the personas with its
+own subagents instead of a provider key:
+
+```bash
+npm run run -- prompts scenarios/example-onboarding.json --size 30 --seed 1 > out/prompts.jsonl
+# agent: one subagent per line, prompt as its task, reply with the report JSON; write
+# {"id": ..., "report": {...}} lines to out/results.jsonl
+npm run run -- report out/results.jsonl --prompts out/prompts.jsonl --segment tech_savviness
+```
+
+`prompts` prints the same persona prompt `run` would send. `report` aggregates the
+replies. Survey scenarios only; chat scenarios need `run`. See `skills/synthetic-user-testing`.
+
 ## Define a scenario
 
 A scenario is a small TS module. Two flavors:
