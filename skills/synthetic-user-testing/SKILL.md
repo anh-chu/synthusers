@@ -41,7 +41,12 @@ only needed for the optional `run` command.
 3. For each line, start one subagent (dsh `subagent`, Claude Code `Task`) with `prompt`
    as its whole task. Start them in parallel batches. Tell each to reply with ONLY this JSON:
    `{"answer": string, "rating": 1-5, "reasoning": string, "frictions": string[], "succeeded": boolean}`
-   Use a cheap model. Subagents must not use tools or read the repo: they only role-play.
+   Use a cheap model. Subagents may read only their own prompt line; nothing else.
+   Harnesses cap active children (dsh: 8). Start 8, then start the next one each time a
+   reply arrives. A rejected start is not a failure: retry it later. Do not poll.
+   Replies come in as messages, not files, and may wrap the report (`{"id":..,"report":{..}}`
+   or `{"idx":..,"result":{..}}`) or use a wrong id. Key every reply by the persona you
+   assigned to that subagent, not by the id the subagent wrote.
 4. Write one line per reply to `out/results.jsonl`: `{"id": "<id from prompts>", "report": {...}}`.
 5. Aggregate:
    ```bash
