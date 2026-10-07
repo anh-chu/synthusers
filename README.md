@@ -1,155 +1,156 @@
 # synthusers
 
-Persona-driven synthetic-user testing harness. Sample realistic personas, let an
-LLM play each one, run them through a scenario you define, and get an aggregated
-report of where different user types succeed, stall, or bail.
+Test a product on about a million realistic synthetic users. Each user is a persona from
+[MatrAIx Persona 1M](https://huggingface.co/datasets/MatrAIx2026/MatrAIx_Persona_1M)
+(999,847 personas, each with up to 1,290 attributes). An LLM plays each persona through a
+scenario you define, and you get a report of where different user types succeed, stall, or
+bail. The same personas can also become rows of realistic mock data.
 
-Project-agnostic: point a scenario at any product (a described flow, or a live
-chat endpoint). Built on the [MatrAIx](https://github.com/MatrAIx-ai/MatrAIx-Persona-8B) Persona 1M
-dataset, trimmed to the cheap, useful core: personas + LLM runner + report. No Docker,
-no browser/device automation (yet).
+Project-agnostic: point a scenario at any product (a described flow, or a live chat
+endpoint). No Docker, no browser or device automation.
 
 > Signal, not truth. These are simulated users. Treat results as hypothesis
 > generation and lead-finding, not a replacement for real-user evidence.
 
-## Install
+## Quickstart
 
 ```bash
-cd ~/synthusers
 npm install
-cp .env.example .env   # set MODEL + one API key
+npm run run -- fetch --shards 9            # one-time, ~80 MB: the synthetic personas
+npm run run -- personas --size 20 --stratify region --seed 1
 ```
 
-## Run
+For the full pool run `fetch --shards all` (~880 MB). The data is cached in
+`~/.cache/synthusers/matraix` and never goes into git.
 
-```bash
-# Survey: personas read a described flow and self-report.
-npm run run -- run scenarios/example-onboarding.ts --segment tech_savviness --out out/trials.jsonl
+Then run a study one of two ways.
 
-# Chat: personas talk to your bot (respond()) then self-report.
-npm run run -- run scenarios/example-chat.ts --size 8
-```
+### A. Through an agent harness (no API key)
 
-Flags: `--size N` (default 100 on the MatrAIx pool; every match on a JSONL pool), `--concurrency N` (default 4), `--filter`,
-`--stratify`, `--source`, `--seed`, `--personas file.jsonl` (custom pool),
-`--segment field` (repeatable breakdown), `--out trials.jsonl` (dump every
-transcript + report). Run with no command for full usage.
-
-## Without an API key (agent harnesses)
-
-If an agent (Claude Code, pi, dsh, ...) drives this, it can play the personas with its
-own subagents instead of a provider key:
+An agent (Claude Code, pi, dsh, ...) plays the personas with its own subagents:
 
 ```bash
 npm run run -- prompts scenarios/example-onboarding.json --size 30 --seed 1 > out/prompts.jsonl
-# agent: one subagent per line, prompt as its task, reply with the report JSON; write
-# {"id": ..., "report": {...}} lines to out/results.jsonl
+# The agent starts one subagent per line, with `prompt` as its task. Each replies with
+# {"answer", "rating", "reasoning", "frictions", "succeeded"}. The agent writes lines of
+# {"id": ..., "report": {...}} to out/results.jsonl.
 npm run run -- report out/results.jsonl --prompts out/prompts.jsonl --segment tech_savviness
 ```
 
-`prompts` prints the same persona prompt `run` would send. `report` aggregates the
-replies. Survey scenarios only; chat scenarios need `run`. See `skills/synthetic-user-testing`.
+`prompts` prints the same persona prompt that `run` would send. `report` aggregates the
+replies and flags malformed ones. This path covers survey scenarios. See
+[`skills/synthetic-user-testing`](skills/synthetic-user-testing/SKILL.md) for the agent
+instructions.
 
-## Define a scenario
-
-A scenario is a small TS module. Two flavors:
-
-- **survey** (`env: "survey"`): set `system` (what the product is) and `task`
-  (what to attempt). One LLM call per persona.
-- **chat** (`env: "chat"`): also provide `respond(messages, persona)` — this is
-  your assistant under test. Swap the example's stub for a `fetch()` to your real
-  endpoint to stress-test the actual bot.
-
-Optional named exports: `cohort` (filter predicate), `segmentBy` (field ids to
-break the report down on) and `summaryFields` (field ids listed first in each
-persona's prompt). JSON scenarios use a `cohort` map such as
-`{"tech_savviness": ["Reluctant", "Avoidant"]}`, applied while sampling. See `scenarios/example-onboarding.ts`.
-
-## Personas
-
-The persona pool is [MatrAIx Persona 1M](https://huggingface.co/datasets/MatrAIx2026/MatrAIx_Persona_1M):
-999,847 personas, each described by up to 1,290 categorical attributes (demographics,
-Big Five and character traits, values, risk and decision style, habits, expertise,
-language, developer-survey fields, and more). 600k are derived from real records
-(Stack Overflow survey, GSS, Amazon reviews, PRISM, a human survey, Wikipedia) and
-400k are synthetic.
+### B. Standalone (needs a model key)
 
 ```bash
-npm run run -- fetch --shards all     # one-time, ~880 MB cache (try: --shards 9, ~80 MB, synthetic only)
-npm run run -- fields                 # browse the 1,290 fields
-npm run run -- fields --search patience
-npm run run -- fields tech_savviness  # values for one field
-npm run run -- personas --size 200 --stratify region,age_bracket --seed 1
-npm run run -- personas --filter "region=South Asia|East Asia" --filter tech_savviness=Reluctant --size 50
+cp .env.example .env     # set MODEL="provider/id" and OPENAI_API_KEY or ANTHROPIC_API_KEY
+npm run run -- run scenarios/example-onboarding.json --size 20 --out out/trials.jsonl
 ```
 
-Shards 0-2 hold only `wiki` personas, which are skipped by default. If you never use
-`--source wiki`, `fetch --shards 3-9` saves about 350 MB. A seed reproduces a cohort only
-for the same set of cached shards.
+`run` makes one LLM call per persona (more for chat scenarios) and prints the report.
+It also runs chat scenarios, where personas talk to your bot:
+`npm run run -- run scenarios/example-chat.ts --size 8`.
 
-`fetch` range-reads only the compact attribute columns of the Parquet shards and
-skips the multi-GB description/evidence columns. The cache lives in
-`~/.cache/synthusers/matraix` (override with `SYNTHUSERS_CACHE`; `HF_ENDPOINT` and
-`HF_TOKEN` are honored). Each persona is stored as a 810-byte record, so a scan of
-all 1M personas takes seconds and sampling is seeded and reproducible.
+## Choosing personas
 
-Without the cache, the tool falls back to `src/personas/sample.jsonl`: 8 hand-written
-personas that use the same field ids, so scenarios behave the same. It is for offline
-smoke tests only.
+```bash
+npm run run -- fields                       # list the field categories
+npm run run -- fields --search patience     # find a field
+npm run run -- fields tech_savviness        # see its values
+npm run run -- personas --filter "region=South Asia|East Asia" --filter tech_savviness=Reluctant --size 50
+npm run run -- personas --size 200 --stratify region,age_bracket --seed 1
+```
+
+| Flag | Meaning |
+|---|---|
+| `--filter field=a\|b` | Repeatable. Either value within a field; separate flags are ANDed. |
+| `--stratify f1,f2` | Spread the sample in proportion across these fields. |
+| `--source list` | Comma list: `synthetic,stackoverflow,gss,amazon,prism,real_human_survey,wiki`. |
+| `--seed N` | Reproducible sampling (for the same cached shards). |
+| `--size N` | Cohort size. Default 100 on the MatrAIx pool. |
+| `--min-attrs N` | Skip sparse personas. Default 60. |
+| `--include-minors` | Keep personas under 18. |
+| `--personas file.jsonl` | Use your own JSONL pool instead. |
+
+Run `npm run run` with no command for the full usage text.
 
 **Sampling rules**
 
-- Filters take MatrAIx field ids. `a|b` means either value; separate `--filter` flags
-  are ANDed. A persona that lacks the field never matches. Unknown fields or values fail
-  with a "did you mean" hint.
-- Personas with fewer than 60 populated fields are skipped (`--min-attrs`): an Amazon
-  or GSS row carries only 12 to 16 fields, too little to role-play.
-- Under-18 personas are excluded (`--include-minors`). A persona with no age is kept.
-- Some personas carry exact values outside the codebook (age `65+`, region
-  `Southern Europe`). Filters accept them, and `--stratify` treats them as their own group.
-- `wiki` personas (model-extracted profiles of notable real people) are excluded unless
-  you pass `--source wiki`. `--source` takes a comma list of dataset sources.
-- `--stratify f1,f2` spreads the sample in proportion across those fields. Without it,
-  sampling is uniform over matching rows.
-- Rows are sparse. Nothing is imputed: a missing field is absent from the persona.
-- Personas have no names, and no source record id reaches the prompt. The dataset
-  forbids impersonating or re-identifying real people.
+- Unknown fields or values fail with a "did you mean" hint. A persona that lacks a filtered field never matches.
+- Rows are sparse and nothing is imputed: a missing field is absent from the persona.
+- Under-18 personas, and personas with fewer than 60 populated fields, are skipped by default. A persona with no age is kept.
+- `wiki` personas (model-extracted profiles of notable real people) are skipped unless you pass `--source wiki`. They fill shards 0 to 2, so `fetch --shards 3-9` saves about 350 MB.
+- Some personas carry exact values outside the codebook (age `65+`, region `Southern Europe`). Filters accept them and `--stratify` treats them as their own group.
+- Personas have no names, and no source record id reaches the prompt. The dataset forbids impersonating or re-identifying real people.
+
+Without a cache, the tool falls back to `src/personas/sample.jsonl`: 8 hand-written
+personas that use the same field ids. It is for offline smoke tests only.
+
+**How `fetch` works.** It range-reads only the compact attribute columns of the Parquet
+shards and skips the multi-GB description and evidence columns. Each persona is stored as
+an 810-byte record, so scanning all 1M personas takes seconds. Override the cache path with
+`SYNTHUSERS_CACHE`. `HF_ENDPOINT` and `HF_TOKEN` are honored.
 
 **License.** The MatrAIx dataset is **non-commercial research use only**, and subsets
-inherit that. This repo ships no dataset rows; `fetch` downloads them to your cache.
-Do not commit or redistribute the cache. Cite the
-[MatrAIx paper](https://arxiv.org/abs/2608.04205).
+inherit that. This repo ships no dataset rows. Do not commit or redistribute the cache.
+Cite the [MatrAIx paper](https://arxiv.org/abs/2608.04205).
+
+## Define a scenario
+
+A scenario is JSON (survey only, safe for an agent to write) or a TS module.
+
+- **survey**: set `system` (what the product is) and `task` (what to attempt). One LLM call per persona.
+- **chat** (TS only): also provide `respond(messages, persona)`, your assistant under test.
+  Swap the example's stub for a `fetch()` to your real endpoint.
+
+```json
+{
+  "id": "checkout-v2",
+  "env": "survey",
+  "system": "You are buying a laptop on <site>.",
+  "task": "Reach the payment screen. Decide at each step to continue or bail. 'answer' = 'reached payment' or 'abandoned at <step>'.",
+  "cohort": { "tech_savviness": ["Reluctant", "Avoidant"] },
+  "segmentBy": ["tech_savviness", "age_bracket"]
+}
+```
+
+TS scenarios can also export `cohort` (a predicate), `segmentBy` and `summaryFields`
+(field ids listed first in each persona's prompt). See `scenarios/example-onboarding.ts`.
+Write the task from the real product flow, not from memory: a survey only tests your description.
+
+## Mock data
+
+Personas can also *become rows*. Sample a cohort, then map or LLM-expand it into your schema.
+See [`skills/synthetic-mock-data`](skills/synthetic-mock-data/SKILL.md).
+
+```bash
+npm run run -- personas --size 200 --seed 1 > cohort.jsonl
+npx tsx scripts/mock-data-example.ts cohort.jsonl seed.jsonl            # direct map, no LLM
+npx tsx scripts/mock-data-example.ts cohort.jsonl seed.jsonl --expand   # + LLM (needs a key)
+```
 
 ## Layout
 
 ```
 src/
-  types.ts          Persona, Scenario, SurveyReport, TrialResult
-  llm.ts            provider-agnostic model factory (MODEL="provider/id")
+  cli.ts            commands: fetch, fields, personas, prompts, report, run
   matraix/          Persona 1M: fetch (cache), codec, store, sample, toPersona
-  personas/load.ts  buildCohort(): MatrAIx pool or JSONL fallback
-  personas/sample.jsonl  8-persona offline fallback
-  runner.ts         run one persona (survey/chat), run a cohort concurrently
-  report.ts         aggregate: success rate, avg rating, top frictions, segments
-  cli.ts            `synthusers run <scenario.ts>`
-scenarios/          project-defined tests (example-onboarding[.ts|.json], example-chat)
+  personas/         buildCohort() and the 8-persona offline fallback
+  runner.ts         play one persona (survey/chat); run a cohort concurrently
+  report.ts         success rate, avg rating, top frictions, per-segment splits
+  llm.ts            model factory (MODEL="provider/id")
+  types.ts          Persona, Scenario, SurveyReport, TrialResult
+scenarios/          example scenarios
 scripts/            mock-data-example template
 skills/             agent-facing skills (synthetic-user-testing, synthetic-mock-data)
 ```
 
-## Two uses
-
-- **Testing** (`skills/synthetic-user-testing`): personas *act* through a
-  scenario, you get a UX/product-signal report.
-- **Mock data** (`skills/synthetic-mock-data`): personas *become rows*. Sample a
-  cohort, map or LLM-expand into your schema for realistic, diverse seed data.
-  ```bash
-  npx tsx src/cli.ts personas --size 200 --seed 1 > cohort.jsonl
-  npx tsx scripts/mock-data-example.ts cohort.jsonl seed.jsonl        # direct map
-  npx tsx scripts/mock-data-example.ts cohort.jsonl seed.jsonl --expand  # + LLM
-  ```
+`npx tsx src/matraix/codec.check.ts` (or `npm run check`) runs the codec self-check.
 
 ## Cost
 
-Each persona = LLM calls (1 for survey, up to ~2*turns for chat). A 1000-persona
-survey ≈ 1000 calls. Use a cheap model and `--size` while iterating.
+Each persona costs one LLM call for a survey and up to about 2 × turns for chat. A
+1,000-persona survey is about 1,000 calls. Use a cheap model and a small `--size` while
+iterating (10 to 30), and go larger only for a final read.

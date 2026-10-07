@@ -220,6 +220,10 @@ async function main() {
   );
 
   const results = await runCohort(cohort, scenario, num("concurrency") ?? 4);
+  // Without this, an all-error run (e.g. a missing API key) prints "0% success" and no reason.
+  const failures = new Map<string, number>();
+  for (const r of results) if (r.error) failures.set(r.error, (failures.get(r.error) ?? 0) + 1);
+  for (const [msg, n] of failures) console.error(`error (${n} of ${results.length} trials): ${msg}`);
   console.log(formatReport(buildReport(results, segmentBy)));
 
   if (values.out) {
