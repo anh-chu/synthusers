@@ -10,6 +10,11 @@ export type SampleOpts = {
   /** field id -> allowed value(s). OR within a field, AND across fields. Missing never matches. */
   filter?: FieldSpec;
   /**
+   * field id -> value(s) to drop. A persona is dropped only when it carries the field AND the
+   * value is listed, so excluding "Retired" keeps personas whose employment is unknown.
+   */
+  exclude?: FieldSpec;
+  /**
    * Restrict to these dataset sources (synthetic, wiki, stackoverflow, gss, amazon, prism, real_human_survey).
    * Default: everything except `wiki` (model-extracted profiles of notable, mostly older real people:
    * a poor fit for product testing and a responsible-use risk). Pass sources: ["wiki"] to opt in.
@@ -19,8 +24,12 @@ export type SampleOpts = {
   minAttrs?: number;
   includeMinors?: boolean;
   seed?: number;
-  /** Proportional allocation across the combinations of these fields. Rows missing a field are dropped. */
+  /** Allocation across the combinations of these fields. Rows missing a field are dropped. */
   stratify?: string[];
+  /** Give every stratum the same share instead of a share proportional to its size. Needs `stratify`. */
+  balance?: boolean;
+  /** Floor of N per stratum (capped by the rows that exist), the rest proportional. Needs `stratify`. */
+  minPerStratum?: number;
   summaryFields?: string[];
   /** Arbitrary filter on decoded attributes. Decodes every candidate row: slower than `filter`. */
   predicate?: CohortFilter;
@@ -64,7 +73,8 @@ export function fieldIndex(cb: Codebook, id: string): number {
 export function compileSpec(
   cb: Codebook,
   spec: FieldSpec,
-  extra: Map<number, Set<string>> = new Map()
+  extra: Map<number, Set<string>> = new Map(),
+  label = "filter"
 ): { idx: number; allowed: Set<string> }[] {
   return Object.entries(spec).map(([id, want]) => {
     const idx = fieldIndex(cb, id);
@@ -74,8 +84,11 @@ export function compileSpec(
       const hit = values.find((v) => v.toLowerCase() === String(w).toLowerCase());
       if (!hit) {
         const hint = suggest(String(w), values);
+        // `--filter f=!v` reads as negation; point at the flag that does that.
+        const bare = String(w).replace(/^[!-]/, "");
+        const negation = /^[!-]/.test(String(w)) ? ` To exclude values use: --exclude ${id}=${bare}` : "";
         throw new Error(
-          `Field "${id}" has no value "${w}". ${hint.length ? `Did you mean: ${hint.join(", ")}? ` : ""}Values: ${values.join(" | ")}`
+          `Field "${id}" has no value "${w}" in --${label}.${negation}${hint.length ? ` Did you mean: ${hint.join(", ")}?` : ""} Values: ${values.join(" | ")}`
         );
       }
       allowed.add(hit);
@@ -109,17 +122,81 @@ function pushReservoir(b: Bucket, make: () => Item, cap: number, rnd: () => numb
   }
 }
 
-/** Largest-remainder proportional allocation of `size` across bucket counts. */
-function allocate(counts: number[], size: number): number[] {
-  const total = counts.reduce((s, c) => s + c, 0);
-  const exact = counts.map((c) => (c / total) * size);
-  const out = exact.map(Math.floor);
-  let left = size - out.reduce((s, c) => s + c, 0);
-  const order = exact.map((e, i) => ({ i, r: e - Math.floor(e) })).sort((a, b) => b.r - a.r);
-  for (const { i } of order) {
-    if (left <= 0) break;
-    if (out[i]! < counts[i]!) (out[i]!++, left--);
+/**
+ * Hand out `amount` more slots in proportion to each stratum's remaining capacity
+ * (largest remainder, then leftovers to the roomiest strata). Deterministic.
+ */
+function distribute(capacity: number[], amount: number, out: number[]): void {
+  let left = amount;
+  const capTotal = capacity.reduce((s, c) => s + c, 0);
+  if (left > 0 && capTotal > 0) {
+    const exact = capacity.map((c) => (c / capTotal) * left);
+    const add = exact.map(Math.floor);
+    left -= add.reduce((s, c) => s + c, 0);
+    const order = exact
+      .map((e, i) => ({ i, r: e - Math.floor(e) }))
+      .sort((a, b) => b.r - a.r || a.i - b.i);
+    for (const { i } of order) {
+      if (left <= 0) break;
+      if (add[i]! < capacity[i]!) {
+        add[i] = add[i]! + 1;
+        left--;
+      }
+    }
+    for (let i = 0; i < out.length; i++) out[i] = out[i]! + add[i]!;
   }
+  // Anything still unassigned goes to the strata with the most room left.
+  for (const { i } of capacity
+    .map((c, i) => ({ i, cap: c - out[i]! }))
+    .filter((x) => x.cap > 0)
+    .sort((a, b) => b.cap - a.cap || a.i - b.i)) {
+    if (left <= 0) break;
+    out[i] = out[i]! + 1;
+    left--;
+  }
+}
+
+/** Proportional allocation, optionally with a floor of `minPer` per stratum. */
+export function allocateProportional(counts: number[], size: number, minPer = 0): number[] {
+  const target = Math.min(size, counts.reduce((s, c) => s + c, 0));
+  if (minPer <= 0) {
+    const out = counts.map(() => 0);
+    distribute(counts, target, out);
+    return out;
+  }
+  const out = counts.map((c) => Math.min(minPer, c));
+  const floors = out.reduce((s, c) => s + c, 0);
+  if (floors > target)
+    throw new Error(
+      `--min-per-stratum ${minPer} reserves ${floors} personas across ${counts.length} strata, more than --size ${size}. Raise --size or lower --min-per-stratum (a stratum with fewer rows than the floor takes only what exists).`
+    );
+  distribute(counts.map((c, i) => c - out[i]!), target - floors, out);
+  return out;
+}
+
+/**
+ * Equal allocation: every stratum gets the same share, and a stratum with fewer rows
+ * than its share passes the remainder to the others (water-filling). This is what buys
+ * coverage of small segments, which proportional allocation only mirrors.
+ */
+export function allocateBalanced(counts: number[], size: number): number[] {
+  const target = Math.min(size, counts.reduce((s, c) => s + c, 0));
+  let remaining = target;
+  const out = counts.map(() => 0);
+  let active = counts.map((c, i) => i).filter((i) => counts[i]! > 0);
+  while (remaining > 0 && active.length > 0) {
+    const share = Math.floor(remaining / active.length);
+    if (share === 0) break;
+    const next: number[] = [];
+    for (const i of active) {
+      const add = Math.min(share, counts[i]! - out[i]!);
+      out[i] = out[i]! + add;
+      remaining -= add;
+      if (out[i]! < counts[i]!) next.push(i);
+    }
+    active = next;
+  }
+  distribute(counts.map((c, i) => c - out[i]!), remaining, out);
   return out;
 }
 
@@ -134,8 +211,14 @@ export function sampleMatraix(opts: SampleOpts): SampleResult {
   const cb = loadCodebook();
   const shards = cachedShards();
   if (!shards.length) throw new Error("No MatrAIx shards cached. Run: synthusers fetch");
-  const filters = compileSpec(cb, opts.filter ?? {}, overrideValues(shards));
+  const extra = overrideValues(shards);
+  const filters = compileSpec(cb, opts.filter ?? {}, extra, "filter");
+  const excludes = compileSpec(cb, opts.exclude ?? {}, extra, "exclude");
   const strata = (opts.stratify ?? []).map((id) => fieldIndex(cb, id));
+  if (opts.balance && !strata.length) throw new Error("--balance needs --stratify (e.g. --stratify region)");
+  if (opts.minPerStratum && !strata.length) throw new Error("--min-per-stratum needs --stratify (e.g. --stratify region)");
+  if (opts.balance && opts.minPerStratum)
+    throw new Error("--balance and --min-per-stratum conflict: --balance already gives every stratum an equal share");
   const ageIdx = cb.index.get("age_bracket")!;
   const minAttrs = opts.minAttrs ?? 60;
   const seed = opts.seed ?? Math.floor(Math.random() * 2 ** 31);
@@ -172,6 +255,14 @@ export function sampleMatraix(opts: SampleOpts): SampleResult {
         }
       }
       if (!ok) continue;
+      for (const e of excludes) {
+        const v = fieldValue(cb, rec, e.idx, ov);
+        if (v !== undefined && e.allowed.has(v)) {
+          ok = false;
+          break;
+        }
+      }
+      if (!ok) continue;
       let key = "";
       if (strata.length) {
         const vals = strata.map((k) => fieldValue(cb, rec, k, ov));
@@ -192,7 +283,11 @@ export function sampleMatraix(opts: SampleOpts): SampleResult {
   const all = [...buckets.values()];
   if (!strata.length) picked = all[0]?.items ?? [];
   else {
-    const take = allocate(all.map((b) => b.seen), Math.min(opts.size, matched));
+    const counts = all.map((b) => b.seen);
+    const target = Math.min(opts.size, matched);
+    const take = opts.balance
+      ? allocateBalanced(counts, target)
+      : allocateProportional(counts, target, opts.minPerStratum ?? 0);
     picked = all.flatMap((b, k) => {
       const items = [...b.items];
       for (let i = items.length - 1; i > 0; i--) {

@@ -4,7 +4,7 @@ import { dirname, resolve } from "node:path";
 import { PersonaSchema, type Persona, type CohortFilter } from "../types.js";
 import { matraixAvailable } from "../matraix/store.js";
 import { sampleMatraix, type SampleOpts } from "../matraix/sample.js";
-import { compileCohort, type CohortSpec } from "../scenario.js";
+import { compileCohort, compileExclude, type CohortSpec } from "../scenario.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -51,12 +51,16 @@ export type Cohort = { personas: Persona[]; pool: string; note: string };
 export function buildCohort(req: CohortRequest): Cohort {
   const useJsonl = req.file || process.env.PERSONAS_FILE || !matraixAvailable();
   if (useJsonl) {
-    const filters = [req.spec ? compileCohort(req.spec) : undefined, req.predicate].filter(Boolean) as CohortFilter[];
+    const filters = [
+      req.spec ? compileCohort(req.spec) : undefined,
+      req.exclude ? compileExclude(req.exclude) : undefined,
+      req.predicate,
+    ].filter(Boolean) as CohortFilter[];
     const personas = sampleCohort(loadPersonas(req.file), {
       filter: filters.length ? (p) => filters.every((f) => f(p)) : undefined,
       size: req.size,
     });
-    const ignored = (["stratify", "sources", "seed", "minAttrs"] as const).filter((k) => req[k] !== undefined && !(Array.isArray(req[k]) && !(req[k] as unknown[]).length));
+    const ignored = (["stratify", "sources", "seed", "minAttrs", "balance", "minPerStratum"] as const).filter((k) => req[k] !== undefined && !(Array.isArray(req[k]) && !(req[k] as unknown[]).length));
     if (ignored.length || req.includeMinors) console.error(`warning: ${[...ignored, ...(req.includeMinors ? ["includeMinors"] : [])].join(", ")} only apply to the MatrAIx pool; ignored for JSONL pools.`);
     const bundled = !req.file && !process.env.PERSONAS_FILE;
     return {

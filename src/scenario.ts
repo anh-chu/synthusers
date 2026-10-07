@@ -19,7 +19,7 @@ export const CohortSpecSchema = z.record(
 );
 export type CohortSpec = z.infer<typeof CohortSpecSchema>;
 
-const personaValue = (p: Persona, key: string): unknown =>
+export const personaValue = (p: Persona, key: string): unknown =>
   key in p.attributes ? p.attributes[key] : (p as unknown as Record<string, unknown>)[key];
 
 export function compileCohort(spec: CohortSpec): CohortFilter {
@@ -29,6 +29,21 @@ export function compileCohort(spec: CohortSpec): CohortFilter {
       const got = personaValue(p, k);
       const eq = (w: unknown) => String(w).toLowerCase() === String(got).toLowerCase();
       return Array.isArray(want) ? want.some(eq) : eq(want);
+    });
+}
+
+/**
+ * Inverse of `compileCohort`: a persona passes when it does not carry any excluded
+ * value. A persona missing the field passes (nothing says it has the value).
+ */
+export function compileExclude(spec: CohortSpec): CohortFilter {
+  const entries = Object.entries(spec);
+  return (p) =>
+    entries.every(([k, want]) => {
+      const got = personaValue(p, k);
+      if (got === undefined) return true;
+      const list = Array.isArray(want) ? want : [want];
+      return !list.some((w) => String(w).toLowerCase() === String(got).toLowerCase());
     });
 }
 

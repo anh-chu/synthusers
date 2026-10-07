@@ -1,0 +1,10 @@
+{
+  "filter": { "cog_patience": ["Low", "None"] },
+  "exclude": { "demo_employment_status": ["Retired", "Unemployed"] },
+  "source": ["synthetic", "stackoverflow"],
+  "stratify": ["region"],
+  "balance": true,
+  "size": 40,
+  "seed": 1,
+  "min-attrs": 100
+}

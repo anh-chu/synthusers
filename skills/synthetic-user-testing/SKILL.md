@@ -112,6 +112,16 @@ Run: `npx tsx src/cli.ts run myscenario.ts`
   `--stratify region,age_bracket` for a population-like spread, `--seed N` to reproduce,
   `--source synthetic,stackoverflow,...`, `--size N`. Use field ids in `cohort` and
   `segmentBy` of scenarios too. Wrong ids or values fail with suggestions.
+- Curate deliberately: `--exclude field=v1|v2` drops personas that carry a value (a persona
+  missing the field is kept). `--stratify region --balance` gives every stratum an equal share,
+  which covers small segments; plain `--stratify` only mirrors the pool and can leave a small
+  segment with no personas at all. `--min-per-stratum N` reserves N per stratum.
+- Save a curation in a cohort file and reuse it from both commands:
+  `npx tsx src/cli.ts personas --cohort cohorts/low-patience.json` and
+  `npx tsx src/cli.ts prompts scenarios/my.json --cohort cohorts/low-patience.json`.
+  Keys match the flags (`filter`, `exclude`, `source`, `stratify`, `balance`,
+  `min-per-stratum`, `min-attrs`, `size`, `seed`). Flags override the file; the file
+  overrides the scenario's own `cohort` map. Keep the file next to its scenario.
 - Preview first: `npx tsx src/cli.ts personas --filter ... --size 20`.
 - Data is research-only licensed: do not commit cached data or paste many personas into repos.
 

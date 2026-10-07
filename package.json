@@ -9,7 +9,7 @@
   "scripts": {
     "run": "tsx src/cli.ts",
     "fetch-personas": "tsx src/cli.ts fetch",
-    "check": "tsx src/matraix/codec.check.ts",
+    "check": "tsx src/matraix/codec.check.ts && tsx src/matraix/sample.check.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

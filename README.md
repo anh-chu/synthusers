@@ -61,12 +61,19 @@ npm run run -- fields --search patience     # find a field
 npm run run -- fields tech_savviness        # see its values
 npm run run -- personas --filter "region=South Asia|East Asia" --filter tech_savviness=Reluctant --size 50
 npm run run -- personas --size 200 --stratify region,age_bracket --seed 1
+npm run run -- personas --exclude "demo_employment_status=Retired|Homemaker" --size 50
+# Coverage instead of mirroring: every region gets the same share.
+npm run run -- personas --size 200 --stratify region --balance --seed 1
 ```
 
 | Flag | Meaning |
 |---|---|
 | `--filter field=a\|b` | Repeatable. Either value within a field; separate flags are ANDed. |
-| `--stratify f1,f2` | Spread the sample in proportion across these fields. |
+| `--exclude field=a\|b` | Repeatable. Drop personas that carry one of these values. |
+| `--stratify f1,f2` | Spread the sample across these fields (proportional by default). |
+| `--balance` | With `--stratify`: equal share per stratum, so small segments are covered. |
+| `--min-per-stratum N` | With `--stratify`: reserve N per stratum, the rest proportional. |
+| `--cohort FILE.json` | Read the curation from a reusable file (see below). Flags override it. |
 | `--source list` | Comma list: `synthetic,stackoverflow,gss,amazon,prism,real_human_survey,wiki`. |
 | `--seed N` | Reproducible sampling (for the same cached shards). |
 | `--size N` | Cohort size. Default 100 on the MatrAIx pool. |
@@ -84,6 +91,34 @@ Run `npm run run` with no command for the full usage text.
 - `wiki` personas (model-extracted profiles of notable real people) are skipped unless you pass `--source wiki`. They fill shards 0 to 2, so `fetch --shards 3-9` saves about 350 MB.
 - Some personas carry exact values outside the codebook (age `65+`, region `Southern Europe`). Filters accept them and `--stratify` treats them as their own group.
 - Personas have no names, and no source record id reaches the prompt. The dataset forbids impersonating or re-identifying real people.
+- `--exclude f=v` drops a persona only when it carries the field and that value. A persona whose field is missing is kept, because nothing says it has that value. `--filter f=v` is the opposite: the persona must carry the field to match.
+- `--stratify f1,f2` breaks the cohort into strata (all combinations of the field values). Proportional allocation mirrors the pool, so a small segment can end up with no personas once the cohort is small. `--balance` gives every stratum the same share and passes the remainder from strata that cannot fill it. `--min-per-stratum N` reserves a floor and keeps the rest proportional.
+
+### Reusable cohort file
+
+Put a curation in one JSON file and use it from both `personas` and `run`:
+
+```json
+{
+  "filter": { "cog_patience": ["Low", "None"] },
+  "exclude": { "demo_employment_status": ["Retired", "Unemployed"] },
+  "source": ["synthetic", "stackoverflow"],
+  "stratify": ["region"],
+  "balance": true,
+  "size": 40,
+  "seed": 1,
+  "min-attrs": 100
+}
+```
+
+```bash
+npm run run -- personas --cohort cohorts/low-patience.json > out/cohort.jsonl
+npm run run -- prompts scenarios/example-onboarding.json --cohort cohorts/low-patience.json
+```
+
+Every key is optional and takes the same name as its flag. Command-line flags override the
+file, and the file overrides a scenario's own `cohort` map, so the most explicit level wins.
+An unknown key or bad value is rejected with a message naming the problem.
 
 Without a cache, the tool falls back to `src/personas/sample.jsonl`: 8 hand-written
 personas that use the same field ids. It is for offline smoke tests only.

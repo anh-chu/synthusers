@@ -9,6 +9,7 @@ import { buildReport, formatReport } from "./report.js";
 import { fetchCommand } from "./matraix/fetch.js";
 import { loadCodebook, matraixAvailable } from "./matraix/store.js";
 import { fieldIndex, suggest, type FieldSpec } from "./matraix/sample.js";
+import { loadCohortFile, type CohortFile } from "./cohort.js";
 
 const USAGE = `synthusers - persona-driven synthetic-user testing
 
@@ -24,9 +25,15 @@ usage:
 cohort options (personas, run):
   --size N             cohort size (default 100 on MatrAIx; all matches on JSONL pools)
   --filter f=v1|v2     repeatable. OR within a field, AND across fields. Run "fields" to find ids
+  --exclude f=v1|v2    repeatable. Drop personas that carry one of these values
+  --cohort FILE.json   reusable cohort definition (filter, exclude, source, stratify, size,
+                       seed, min-attrs, balance, min-per-stratum). Flags override the file
   --source LIST        comma list: synthetic,stackoverflow,gss,amazon,prism,real_human_survey,wiki
                        (default: all except wiki, which profiles notable real people, mostly older)
-  --stratify f1,f2     proportional spread across these fields, e.g. region,age_bracket
+  --stratify f1,f2     spread the sample across these fields, e.g. region,age_bracket (proportional)
+  --balance            with --stratify: give every stratum an equal share, so small
+                       segments are covered instead of mirrored
+  --min-per-stratum N  with --stratify: reserve N per stratum, the rest proportional
   --seed N             reproducible sampling
   --min-attrs N        skip personas with fewer populated fields (default 60)
   --include-minors     keep personas under 18 (excluded by default)
@@ -107,7 +114,8 @@ async function resolveRun(
   scenarioPath: string | undefined,
   values: { system?: string; task?: string; id?: string; segment?: string[] },
   cohortReq: CohortReq,
-  cliSpec: FieldSpec
+  cliSpec: FieldSpec,
+  fromFile = ""
 ) {
   const loaded = await loadScenario({
     path: scenarioPath,
@@ -117,7 +125,7 @@ async function resolveRun(
   });
   const { scenario } = loaded;
   const segmentBy = values.segment ?? loaded.segmentBy ?? [];
-  const spec: FieldSpec = { ...(loaded.cohortSpec ?? {}), ...cliSpec };
+  const spec: FieldSpec = { ...(loaded.cohortSpec ?? {}), ...cliSpec }; // scenario < cohort file < flags
   const summaryFields = [...new Set([...segmentBy, ...Object.keys(spec), ...(loaded.summaryFields ?? [])])];
 
   if (!cohortReq.file && !process.env.PERSONAS_FILE && matraixAvailable()) {
@@ -154,6 +162,10 @@ async function main() {
       out: { type: "string" },
       segment: { type: "string", multiple: true },
       filter: { type: "string", multiple: true },
+      exclude: { type: "string", multiple: true },
+      cohort: { type: "string" },
+      balance: { type: "boolean", default: false },
+      "min-per-stratum": { type: "string" },
       source: { type: "string" },
       stratify: { type: "string" },
       seed: { type: "string" },
@@ -172,8 +184,9 @@ async function main() {
     const raw = values[k as keyof typeof values] as string | undefined;
     if (raw === undefined) return undefined;
     const n = Number(raw);
-    if (!Number.isInteger(n) || n < (k === "seed" || k === "min-attrs" ? 0 : 1))
-      throw new Error(`--${k} must be a ${k === "seed" || k === "min-attrs" ? "non-negative" : "positive"} integer, got: ${raw}`);
+    const nonNegative = k === "seed" || k === "min-attrs" || k === "min-per-stratum";
+    if (!Number.isInteger(n) || n < (nonNegative ? 0 : 1))
+      throw new Error(`--${k} must be a ${nonNegative ? "non-negative" : "positive"} integer, got: ${raw}`);
     return n;
   };
 
@@ -181,21 +194,30 @@ async function main() {
   if (cmd === "fields") return fieldsCommand(scenarioPath, values);
   if (cmd === "report") return reportCommand(scenarioPath, values.prompts, values.segment);
 
-  const cohortReq = {
-    size: num("size"),
-    file: values.personas,
-    sources: values.source?.split(",").map((s) => s.trim()).filter(Boolean),
-    stratify: values.stratify?.split(",").map((s) => s.trim()).filter(Boolean),
-    seed: num("seed"),
-    minAttrs: num("min-attrs"),
-    includeMinors: values["include-minors"],
-  };
+  const file: CohortFile | undefined = values.cohort ? loadCohortFile(values.cohort) : undefined;
   const cliSpec = parseFilters(values.filter);
+  const cliExclude = parseFilters(values.exclude);
+  const list = (v: string | undefined): string[] | undefined =>
+    v?.split(",").map((x) => x.trim()).filter(Boolean);
+  const cohortReq = {
+    size: num("size") ?? file?.size,
+    file: values.personas,
+    sources: list(values.source) ?? file?.source,
+    stratify: list(values.stratify) ?? file?.stratify,
+    seed: num("seed") ?? file?.seed,
+    minAttrs: num("min-attrs") ?? file?.["min-attrs"],
+    includeMinors: values["include-minors"] || file?.["include-minors"] === true,
+    balance: values.balance || file?.balance === true,
+    minPerStratum: num("min-per-stratum") ?? file?.["min-per-stratum"],
+    exclude: { ...(file?.exclude ?? {}), ...cliExclude } as FieldSpec,
+  };
+  const fromFile = file ? ` (cohort file: ${values.cohort})` : "";
 
   if (cmd === "personas") {
-    const { personas, pool, note } = buildCohort({ ...cohortReq, spec: cliSpec, summaryFields: Object.keys(cliSpec) });
+    const spec: FieldSpec = { ...(file?.filter ?? {}), ...cliSpec };
+    const { personas, pool, note } = buildCohort({ ...cohortReq, spec, summaryFields: Object.keys(spec) });
     for (const p of personas) console.log(JSON.stringify(p));
-    console.error(`\n${personas.length} personas from ${pool}. ${note}`);
+    console.error(`\n${personas.length} personas from ${pool}.${fromFile} ${note}`);
     return;
   }
 
@@ -204,19 +226,25 @@ async function main() {
     process.exit(cmd ? 1 : 0);
   }
 
-  const { scenario, cohort, segmentBy, pool, note } = await resolveRun(scenarioPath, values, cohortReq, cliSpec);
+  const { scenario, cohort, segmentBy, pool, note } = await resolveRun(
+    scenarioPath,
+    values,
+    cohortReq,
+    { ...(file?.filter ?? {}), ...cliSpec },
+    fromFile
+  );
   if (cmd === "prompts") {
     // Same cohort and prompt text as `run`, for an agent that plays the personas itself (e.g. via subagents).
     for (const p of cohort) {
       const prompt = `${personaSystem(p, scenario)}\n\n# Your task\n${scenario.task}\n\n${REPORT_INSTRUCTION}`;
       console.log(JSON.stringify({ id: p.id, persona: p, prompt }));
     }
-    console.error(`\n${cohort.length} prompts from ${pool}. ${note}\nEach reply must be JSON: ${REPORT_SHAPE}`);
+    console.error(`\n${cohort.length} prompts from ${pool}.${fromFile} ${note}\nEach reply must be JSON: ${REPORT_SHAPE}`);
     return;
   }
 
   console.error(
-    `Running "${scenario.id}" (${scenario.env}) on ${cohort.length} personas from ${pool}, model=${process.env.MODEL ?? "openai/gpt-4o-mini"}. ${note}`
+    `Running "${scenario.id}" (${scenario.env}) on ${cohort.length} personas from ${pool}${fromFile}, model=${process.env.MODEL ?? "openai/gpt-4o-mini"}. ${note}`
   );
 
   const results = await runCohort(cohort, scenario, num("concurrency") ?? 4);

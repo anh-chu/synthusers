@@ -30,6 +30,8 @@ target schema -> map/expand -> emit seed script.
 cd ~/synthusers
 npx tsx src/cli.ts personas --filter "socioeconomic_band=Low income|Lower-middle" --size 200 --seed 1 > cohort.jsonl
 # population-like spread: npx tsx src/cli.ts personas --size 500 --stratify region,age_bracket --seed 1 > cohort.jsonl
+# cover small segments: add --balance. Drop unwanted rows: add --exclude field=v
+# reuse a saved curation: npx tsx src/cli.ts personas --cohort cohorts/seed-data.json > cohort.jsonl
 ```
 The pool is MatrAIx Persona 1M (~1M personas x up to 1,290 fields). If `fetch` has not
 been run, only 8 fallback personas exist: run `npx tsx src/cli.ts fetch --shards all`
