@@ -28,15 +28,17 @@ target schema -> map/expand -> emit seed script.
 ## Step 1: sample a persona pool
 ```bash
 cd ~/synthusers
-npx tsx src/cli.ts personas --filter budget=tight --size 200 > cohort.jsonl
-# or unfiltered: npx tsx src/cli.ts personas --size 500 > cohort.jsonl
+npx tsx src/cli.ts personas --filter "socioeconomic_band=Low income|Lower-middle" --size 200 --seed 1 > cohort.jsonl
+# population-like spread: npx tsx src/cli.ts personas --size 500 --stratify region,age_bracket --seed 1 > cohort.jsonl
 ```
-Bundled pool is 8 archetypes. For volume, import MatrAIx Persona 1M (see repo
-README) and pass `--personas personas.jsonl`.
+The pool is MatrAIx Persona 1M (~1M personas x up to 1,290 fields). If `fetch` has not
+been run, only 8 fallback personas exist: run `npx tsx src/cli.ts fetch --shards all`
+first (~810 MB). Browse fields with `fields --search <text>`; wrong field ids or
+values fail with suggestions.
 
 Persona shape (fields you map from):
-`id, name, ageRange, region, occupation, summary, attributes{ techSavvy, budget,
-patience, hasChildren, ... }`
+`id, name (empty), ageRange, region, occupation, summary, attributes{ <MatrAIx field id>: value }`.
+Rows are sparse: always give a fallback when an attribute is missing.
 
 ## Step 2: read the TARGET schema
 Open the actual schema in the project you are seeding (e.g. a Convex
@@ -69,10 +71,12 @@ batch, a Prisma `createMany`, SQL inserts, or a fixtures file. Match the
 project's existing seeding convention if one exists.
 
 ## Guardrails
-- License: repo code is MIT, but the Persona 1M dataset is released for RESEARCH
-  use. Fine for internal dev/test/demo data; check terms before shipping it in a
-  public/production product.
+- License: repo code is MIT, but Persona 1M is NON-COMMERCIAL RESEARCH use only and
+  subsets inherit that. Do not commit persona rows to a repo and do not ship them in a
+  commercial product. Derive rows from persona fields, generate fresh values, and treat
+  the output as a derivative under the same terms unless the user confirms otherwise.
+- Never present a persona as a real person; no re-identification.
 - Never write real secrets, emails, or payment details. Generate placeholder
-  contact/auth fields; persona names are fictional and safe.
+  contact/auth fields; personas have no names: generate fictional ones.
 - Keep it deterministic where possible (seed any randomness) so reseeding is
   reproducible.

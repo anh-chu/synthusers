@@ -44,7 +44,11 @@ export const JsonScenarioSchema = z.object({
 export type LoadedScenario = {
   scenario: Scenario;
   cohort?: CohortFilter;
+  /** Declarative cohort (JSON scenarios): validated against the MatrAIx codebook and applied during sampling. */
+  cohortSpec?: CohortSpec;
   segmentBy?: string[];
+  /** Field ids to put first in each persona's prompt summary (TS scenarios export `summaryFields`). */
+  summaryFields?: string[];
 };
 
 /**
@@ -66,14 +70,15 @@ export async function loadScenario(opts: {
         default: Scenario;
         cohort?: CohortFilter;
         segmentBy?: string[];
+        summaryFields?: string[];
       };
       if (!mod.default?.id) throw new Error(`${opts.path} must default-export a Scenario`);
-      return { scenario: mod.default, cohort: mod.cohort, segmentBy: mod.segmentBy };
+      return { scenario: mod.default, cohort: mod.cohort, segmentBy: mod.segmentBy, summaryFields: mod.summaryFields };
     }
     const raw = JsonScenarioSchema.parse(JSON.parse(readFileSync(abs, "utf8")));
     return {
       scenario: { id: raw.id, env: raw.env, system: raw.system, task: raw.task },
-      cohort: raw.cohort ? compileCohort(raw.cohort) : undefined,
+      cohortSpec: raw.cohort,
       segmentBy: raw.segmentBy,
     };
   }

@@ -8,13 +8,16 @@
   },
   "scripts": {
     "run": "tsx src/cli.ts",
-    "download-personas": "tsx scripts/download-personas.ts",
+    "fetch-personas": "tsx src/cli.ts fetch",
+    "check": "tsx src/matraix/codec.check.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.0.0",
     "@ai-sdk/openai": "^1.0.0",
     "ai": "^4.0.0",
+    "hyparquet": "^1.31.2",
+    "hyparquet-compressors": "^1.1.2",
     "zod": "^3.23.0"
   },
   "devDependencies": {

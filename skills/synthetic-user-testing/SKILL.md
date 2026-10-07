@@ -35,7 +35,7 @@ cd ~/synthusers
 MODEL=openai/gpt-4o-mini npx tsx src/cli.ts run \
   --system "You just installed <app>, a <what it is>." \
   --task "Do <flow step by step>. At each step decide continue or bail, and why. Your 'answer' must be '<outcome A>' or '<outcome B>'." \
-  --segment techSavvy --segment patience \
+  --segment tech_savviness --segment cog_patience \
   --out out/trials.jsonl
 ```
 Read the printed report (success rate, avg rating, top frictions, per-segment
@@ -50,8 +50,8 @@ Write a JSON file, no code needed:
   "env": "survey",
   "system": "You are buying a laptop on <site>.",
   "task": "Find a laptop under $800 you trust and reach the payment screen. Decide at each step continue or bail. 'answer' = 'reached payment' or 'abandoned at <step>'.",
-  "cohort": { "patience": ["low", "medium"] },
-  "segmentBy": ["techSavvy", "budget"]
+  "cohort": { "cog_patience": ["Low", "None", "Moderate"] },
+  "segmentBy": ["tech_savviness", "socioeconomic_band"]
 }
 ```
 Run: `npx tsx src/cli.ts run path/to/checkout-v2.json`
@@ -79,13 +79,18 @@ export default s;
 Run: `npx tsx src/cli.ts run myscenario.ts`
 
 ## Cohorts and personas
-- Default pool: 8 bundled archetypes in `src/personas/sample.jsonl`.
-- Attributes available for `cohort`/`segment`/`--filter`: `techSavvy`,
-  `budget`, `patience`, `hasChildren`, plus top-level `ageRange`, `region`,
-  `occupation`.
-- Inspect/sample the pool: `npx tsx src/cli.ts personas --filter techSavvy=low`
-- Scale up: import MatrAIx Persona 1M and convert it (see repo README), then run
-  with `--personas personas.jsonl`.
+- Pool: MatrAIx Persona 1M (~1M personas x up to 1,290 fields). One-time setup:
+  `npx tsx src/cli.ts fetch --shards all` (~810 MB; `--shards 9` for a quick 80 MB start).
+  Without the cache you only get 8 fallback personas: tell the user to run `fetch`.
+- Find fields: `npx tsx src/cli.ts fields --search patience`, `fields <fieldId>` for values.
+  Useful ones: `tech_savviness`, `cog_patience`, `socioeconomic_band`, `risk_tolerance`,
+  `time_pressure`, `device_context`, `age_bracket`, `region`, `demo_parental_status`.
+- Select a cohort: `--filter "tech_savviness=Reluctant|Avoidant" --filter region=South\ Asia`,
+  `--stratify region,age_bracket` for a population-like spread, `--seed N` to reproduce,
+  `--source synthetic,stackoverflow,...`, `--size N`. Use field ids in `cohort` and
+  `segmentBy` of scenarios too. Wrong ids or values fail with suggestions.
+- Preview first: `npx tsx src/cli.ts personas --filter ... --size 20`.
+- Data is research-only licensed: do not commit cached data or paste many personas into repos.
 
 ## Workflow for the agent
 1. Read the target flow in the codebase (don't guess it).

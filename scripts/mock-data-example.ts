@@ -8,7 +8,7 @@
  *
  * Usage:
  *   npx tsx scripts/mock-data-example.ts <cohort.jsonl> <out.jsonl> [--expand]
- *   # cohort.jsonl comes from: npx tsx src/cli.ts personas --size N > cohort.jsonl
+ *   # cohort.jsonl comes from: npx tsx src/cli.ts personas --size N --seed 1 > cohort.jsonl
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { z } from "zod";
@@ -32,30 +32,48 @@ type AppUser = {
 };
 
 // --- Deterministic mapping: persona fields -> row ------------------------
+// Persona attributes use MatrAIx Persona 1M field ids (list: synthusers fields).
+// Missing fields are normal (rows are sparse), so always provide a fallback.
 const localeByRegion: Record<string, string> = {
   "North America": "en-US",
-  Europe: "en-GB",
+  "Western Europe": "en-GB",
+  "Eastern Europe": "en",
   "Latin America": "es-419",
   "South Asia": "en-IN",
-  "Middle East": "ar",
-  Africa: "en",
+  "East Asia": "en",
+  "Southeast Asia": "en",
+  MENA: "ar",
+  "Sub-Saharan Africa": "en",
+  Oceania: "en-AU",
+};
+const incomeByBand: Record<string, number> = {
+  "Low income": 1500,
+  "Lower-middle": 2800,
+  Middle: 4800,
+  "Upper-middle": 7500,
+  "High income": 12000,
+};
+const riskByValue: Record<string, AppUser["riskTolerance"]> = {
+  "Risk-averse": "low",
+  Cautious: "low",
+  Balanced: "medium",
+  "Risk-tolerant": "high",
+  "Risk-seeking": "high",
 };
 
 function mapPersona(p: Persona): AppUser {
-  const budget = String(p.attributes.budget ?? "medium");
-  const income = budget === "tight" ? 2200 : budget === "medium" ? 4800 : 9000;
-  const risk =
-    p.attributes.patience === "high" ? "low" : p.attributes.techSavvy === "high" ? "high" : "medium";
+  const band = String(p.attributes.socioeconomic_band ?? "Middle");
+  const income = incomeByBand[band] ?? 4800;
   return {
     id: p.id,
-    displayName: p.name,
+    displayName: p.name || `User ${p.id}`,
     ageRange: p.ageRange,
     region: p.region,
     locale: localeByRegion[p.region] ?? "en",
-    segment: `${p.attributes.techSavvy ?? "?"}-tech/${budget}-budget`,
+    segment: `${p.attributes.tech_savviness ?? "?"} / ${band}`,
     monthlyIncomeEstimate: income,
-    savingsGoal: Math.round(income * (budget === "tight" ? 3 : 6)),
-    riskTolerance: risk as AppUser["riskTolerance"],
+    savingsGoal: Math.round(income * (income < 3000 ? 3 : 6)),
+    riskTolerance: riskByValue[String(p.attributes.risk_tolerance)] ?? "medium",
   };
 }
 
@@ -76,7 +94,7 @@ async function expand(user: AppUser, persona: Persona): Promise<AppUser> {
   const { object } = await generateObject({
     model: getModel(),
     schema: TxnSchema,
-    prompt: `Generate 3-5 realistic recent bank transactions for this person, consistent with who they are. Return amounts in USD.\n\nPerson: ${persona.name}, ${persona.ageRange}, ${persona.region}, ${persona.occupation}.\n${persona.summary}\nMonthly income ~$${user.monthlyIncomeEstimate}, budget ${persona.attributes.budget}.`,
+    prompt: `Generate 3-5 realistic recent bank transactions for this person, consistent with who they are. Return amounts in USD.\n\nPerson: ${persona.ageRange}, ${persona.region}, ${persona.occupation}.\n${persona.summary}\nMonthly income ~$${user.monthlyIncomeEstimate}, income band ${persona.attributes.socioeconomic_band ?? "unknown"}.`,
   });
   return { ...user, recentTransactions: object.recentTransactions };
 }

@@ -13,7 +13,7 @@ function personaSystem(persona: Persona, scenario: Scenario): string {
     `You are role-playing a specific person interacting with a product. Stay in character at all times. React the way THIS person genuinely would, including impatience, confusion, or delight. Do not be a helpful assistant; be this user.`,
     ``,
     `# Who you are`,
-    `Name: ${persona.name}`,
+    ...(persona.name ? [`Name: ${persona.name}`] : []),
     `Age: ${persona.ageRange} | Region: ${persona.region} | Occupation: ${persona.occupation}`,
     persona.summary,
     ``,

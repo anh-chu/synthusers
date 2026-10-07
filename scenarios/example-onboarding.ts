@@ -20,10 +20,18 @@ Then you reach the home screen.
 Decide at each step whether you continue or bail, and why. Your 'answer' should be either "completed onboarding" or "abandoned at step N".`,
 };
 
-/** Optional: restrict the cohort. Here, only lower-patience users. */
-export const cohort: CohortFilter = (p) => p.attributes.patience !== "high";
+/**
+ * Optional: restrict the cohort. Here, anyone who is not very patient.
+ * Attribute keys are MatrAIx field ids; list them with: synthusers fields
+ * (A predicate decodes every candidate row; for plain value filters prefer a
+ * JSON scenario's "cohort" or --filter, which are much faster on 1M personas.)
+ */
+export const cohort: CohortFilter = (p) => ["Low", "None", "Moderate"].includes(String(p.attributes.cog_patience));
 
-/** Optional: break the report down by these attribute keys. */
-export const segmentBy = ["techSavvy", "patience"];
+/** Optional: break the report down by these field ids. */
+export const segmentBy = ["tech_savviness", "cog_patience"];
+
+/** Optional: field ids to list first in each persona's prompt. */
+export const summaryFields = ["tech_savviness", "cog_patience", "socioeconomic_band", "demo_parental_status"];
 
 export default scenario;

@@ -3,8 +3,8 @@ import { z } from "zod";
 /**
  * A persona is a compact, prompt-ready description of a fictional but realistic
  * person. We keep a small set of structured fields for cohort filtering plus a
- * free-text `summary` that gets injected into the agent prompt. This maps down
- * from richer sources (e.g. MatrAIx Persona 1M) via scripts/download-personas.
+ * free-text `summary` that gets injected into the agent prompt. MatrAIx Persona 1M
+ * records map into this shape in src/matraix/toPersona.ts.
  */
 export const PersonaSchema = z.object({
   id: z.string(),
