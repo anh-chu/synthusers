@@ -47,14 +47,41 @@ export function loadCodebook(): Codebook {
   if (!cb) {
     const p = join(cacheDir(), "persona_codes.schema.json");
     if (!existsSync(p)) throw new Error("MatrAIx codebook not cached. Run: synthusers fetch");
-    cb = buildCodebook(JSON.parse(readFileSync(p, "utf8")));
+    const raw = JSON.parse(readFileSync(p, "utf8"));
+    if (raw.packing !== "nibble" || raw.row_bytes !== 645 || raw.columns?.length !== 1290)
+      throw new Error("Unexpected MatrAIx codebook layout (expected nibble packing, 645 bytes, 1,290 fields). Upstream may have changed; update synthusers.");
+    cb = buildCodebook(raw);
   }
   return cb;
 }
 
+const metas = new Map<number, ShardMeta>();
+function loadMeta(n: number, dir: string): ShardMeta {
+  let m = metas.get(n);
+  if (!m) metas.set(n, (m = JSON.parse(readFileSync(shardPaths(dir, n).meta, "utf8")) as ShardMeta));
+  return m;
+}
+
+/**
+ * Exact values that appear only as per-row overrides (e.g. age_bracket "65+",
+ * region "Southern Europe"): not in the codebook, but real. Filters accept them.
+ */
+export function overrideValues(shards: number[], dir = cacheDir()): Map<number, Set<string>> {
+  const out = new Map<number, Set<string>>();
+  for (const n of shards)
+    for (const flat of Object.values(loadMeta(n, dir).overrides))
+      for (let k = 0; k < flat.length; k += 2) {
+        const v = String(flat[k + 1]);
+        if (v === "null") continue;
+        const f = flat[k] as number;
+        (out.get(f) ?? out.set(f, new Set()).get(f)!).add(v);
+      }
+  return out;
+}
+
 export function loadShard(n: number, dir = cacheDir()): Shard {
   const p = shardPaths(dir, n);
-  const meta = JSON.parse(readFileSync(p.meta, "utf8")) as ShardMeta;
+  const meta = loadMeta(n, dir);
   const bin = readFileSync(p.bin);
   if (bin.length !== meta.rows * REC_BYTES) throw new Error(`Corrupt cache for shard ${n}; rerun: synthusers fetch --shards ${n} --force`);
   return { n, bin, meta };

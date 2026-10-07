@@ -30,7 +30,7 @@ npm run run -- run scenarios/example-onboarding.ts --segment tech_savviness --ou
 npm run run -- run scenarios/example-chat.ts --size 8
 ```
 
-Flags: `--size N` (default 100), `--concurrency N` (default 4), `--filter`,
+Flags: `--size N` (default 100 on the MatrAIx pool; every match on a JSONL pool), `--concurrency N` (default 4), `--filter`,
 `--stratify`, `--source`, `--seed`, `--personas file.jsonl` (custom pool),
 `--segment field` (repeatable breakdown), `--out trials.jsonl` (dump every
 transcript + report). Run with no command for full usage.
@@ -60,13 +60,17 @@ language, developer-survey fields, and more). 600k are derived from real records
 400k are synthetic.
 
 ```bash
-npm run run -- fetch --shards all     # one-time, ~810 MB cache (try: --shards 9, ~80 MB, synthetic only)
+npm run run -- fetch --shards all     # one-time, ~880 MB cache (try: --shards 9, ~80 MB, synthetic only)
 npm run run -- fields                 # browse the 1,290 fields
 npm run run -- fields --search patience
 npm run run -- fields tech_savviness  # values for one field
 npm run run -- personas --size 200 --stratify region,age_bracket --seed 1
 npm run run -- personas --filter "region=South Asia|East Asia" --filter tech_savviness=Reluctant --size 50
 ```
+
+Shards 0-2 hold only `wiki` personas, which are skipped by default. If you never use
+`--source wiki`, `fetch --shards 3-9` saves about 350 MB. A seed reproduces a cohort only
+for the same set of cached shards.
 
 `fetch` range-reads only the compact attribute columns of the Parquet shards and
 skips the multi-GB description/evidence columns. The cache lives in
@@ -85,7 +89,9 @@ smoke tests only.
   with a "did you mean" hint.
 - Personas with fewer than 60 populated fields are skipped (`--min-attrs`): an Amazon
   or GSS row carries only 12 to 16 fields, too little to role-play.
-- Under-18 personas are excluded (`--include-minors`).
+- Under-18 personas are excluded (`--include-minors`). A persona with no age is kept.
+- Some personas carry exact values outside the codebook (age `65+`, region
+  `Southern Europe`). Filters accept them, and `--stratify` treats them as their own group.
 - `wiki` personas (model-extracted profiles of notable real people) are excluded unless
   you pass `--source wiki`. `--source` takes a comma list of dataset sources.
 - `--stratify f1,f2` spreads the sample in proportion across those fields. Without it,

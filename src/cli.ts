@@ -6,13 +6,13 @@ import { loadScenario } from "./scenario.js";
 import { runCohort } from "./runner.js";
 import { buildReport, formatReport } from "./report.js";
 import { fetchCommand } from "./matraix/fetch.js";
-import { loadCodebook } from "./matraix/store.js";
+import { loadCodebook, matraixAvailable } from "./matraix/store.js";
 import { fieldIndex, suggest, type FieldSpec } from "./matraix/sample.js";
 
 const USAGE = `synthusers - persona-driven synthetic-user testing
 
 usage:
-  synthusers fetch [--shards 0-9|9|all] [--force]   cache MatrAIx Persona 1M (~810 MB for all)
+  synthusers fetch [--shards 0-9|9|all] [--force]   cache MatrAIx Persona 1M (~880 MB for all)
   synthusers fields [fieldId | --category X | --search text]   browse the 1,290 persona fields
   synthusers personas [options]                     print a sampled cohort as jsonl
   synthusers run [scenario.ts|scenario.json] [options]
@@ -103,7 +103,8 @@ async function main() {
     const raw = values[k as keyof typeof values] as string | undefined;
     if (raw === undefined) return undefined;
     const n = Number(raw);
-    if (!Number.isFinite(n)) throw new Error(`--${k} must be a number, got: ${raw}`);
+    if (!Number.isInteger(n) || n < (k === "seed" || k === "min-attrs" ? 0 : 1))
+      throw new Error(`--${k} must be a ${k === "seed" || k === "min-attrs" ? "non-negative" : "positive"} integer, got: ${raw}`);
     return n;
   };
 
@@ -144,14 +145,7 @@ async function main() {
   const spec: FieldSpec = { ...(loaded.cohortSpec ?? {}), ...cliSpec };
   const summaryFields = [...new Set([...segmentBy, ...Object.keys(spec), ...(loaded.summaryFields ?? [])])];
 
-  const { personas: cohort, pool, note } = buildCohort({
-    ...cohortReq,
-    spec,
-    predicate: loaded.cohort,
-    summaryFields,
-  });
-  if (cohort.length === 0) throw new Error("Cohort is empty (check --filter / --source / --personas)");
-  if (pool === "MatrAIx Persona 1M") {
+  if (!cohortReq.file && !process.env.PERSONAS_FILE && matraixAvailable()) {
     const cb = loadCodebook();
     for (const s of segmentBy) {
       if (!cb.index.has(s) && s !== "source") {
@@ -161,11 +155,19 @@ async function main() {
     }
   }
 
+
+  const { personas: cohort, pool, note } = buildCohort({
+    ...cohortReq,
+    spec,
+    predicate: loaded.cohort,
+    summaryFields,
+  });
+  if (cohort.length === 0) throw new Error("Cohort is empty (check --filter / --source / --personas)");
   console.error(
     `Running "${scenario.id}" (${scenario.env}) on ${cohort.length} personas from ${pool}, model=${process.env.MODEL ?? "openai/gpt-4o-mini"}. ${note}`
   );
 
-  const results = await runCohort(cohort, scenario, Number(values.concurrency));
+  const results = await runCohort(cohort, scenario, num("concurrency") ?? 4);
   console.log(formatReport(buildReport(results, segmentBy)));
 
   if (values.out) {

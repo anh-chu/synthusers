@@ -56,6 +56,8 @@ export function buildCohort(req: CohortRequest): Cohort {
       filter: filters.length ? (p) => filters.every((f) => f(p)) : undefined,
       size: req.size,
     });
+    const ignored = (["stratify", "sources", "seed", "minAttrs"] as const).filter((k) => req[k] !== undefined && !(Array.isArray(req[k]) && !(req[k] as unknown[]).length));
+    if (ignored.length || req.includeMinors) console.error(`warning: ${[...ignored, ...(req.includeMinors ? ["includeMinors"] : [])].join(", ")} only apply to the MatrAIx pool; ignored for JSONL pools.`);
     const bundled = !req.file && !process.env.PERSONAS_FILE;
     return {
       personas,

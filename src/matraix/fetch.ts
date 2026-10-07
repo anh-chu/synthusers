@@ -5,7 +5,7 @@
  * Each 1 GB shard is range-read over HTTP, one row group at a time, taking only
  * the compact columns (attributes, null_bitmap, overrides, source, count). The
  * multi-GB `descriptions` / `grounding` columns are skipped. All 10 shards come
- * to about 810 MB on disk (~80 MB each); `--shards` takes a subset.
+ * to about 880 MB on disk (~80-120 MB each); `--shards` takes a subset.
  */
 import { closeSync, existsSync, openSync, renameSync, writeFileSync, writeSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -22,7 +22,8 @@ const headers = (): Record<string, string> =>
 async function download(path: string, dest: string): Promise<void> {
   const res = await fetch(url(path), { headers: headers() });
   if (!res.ok) throw new Error(`GET ${path}: HTTP ${res.status}`);
-  writeFileSync(dest, Buffer.from(await res.arrayBuffer()));
+  writeFileSync(dest + ".part", Buffer.from(await res.arrayBuffer()));
+  renameSync(dest + ".part", dest); // atomic: an interrupted download never leaves a truncated file
 }
 
 async function retry<T>(fn: () => Promise<T>, tries = 4): Promise<T> {

@@ -27,7 +27,8 @@ export function compileCohort(spec: CohortSpec): CohortFilter {
   return (p) =>
     entries.every(([k, want]) => {
       const got = personaValue(p, k);
-      return Array.isArray(want) ? want.some((w) => String(w) === String(got)) : String(want) === String(got);
+      const eq = (w: unknown) => String(w).toLowerCase() === String(got).toLowerCase();
+      return Array.isArray(want) ? want.some(eq) : eq(want);
     });
 }
 

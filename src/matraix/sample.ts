@@ -1,6 +1,6 @@
 import type { CohortFilter, Persona } from "../types.js";
 import { fieldValue, recPopulated, recSource, type Codebook, type RowOverrides } from "./codec.js";
-import { cachedShards, loadCodebook, loadShard, overridesAt, recordAt } from "./store.js";
+import { cachedShards, loadCodebook, loadShard, overrideValues, overridesAt, recordAt } from "./store.js";
 import { toPersona } from "./toPersona.js";
 
 export type FieldSpec = Record<string, (string | number | boolean)[] | string | number | boolean>;
@@ -61,10 +61,14 @@ export function fieldIndex(cb: Codebook, id: string): number {
 }
 
 /** Validate a spec against the codebook; canonicalize value case. Returns [fieldIdx, allowed values][]. */
-export function compileSpec(cb: Codebook, spec: FieldSpec): { idx: number; allowed: Set<string> }[] {
+export function compileSpec(
+  cb: Codebook,
+  spec: FieldSpec,
+  extra: Map<number, Set<string>> = new Map()
+): { idx: number; allowed: Set<string> }[] {
   return Object.entries(spec).map(([id, want]) => {
     const idx = fieldIndex(cb, id);
-    const values = cb.fields[idx]!.values;
+    const values = [...cb.fields[idx]!.values, ...(extra.get(idx) ?? [])];
     const allowed = new Set<string>();
     for (const w of Array.isArray(want) ? want : [want]) {
       const hit = values.find((v) => v.toLowerCase() === String(w).toLowerCase());
@@ -95,12 +99,13 @@ export function mulberry32(seed: number): () => number {
 type Item = { row: number; rec: Uint8Array; ov?: RowOverrides; source: string };
 type Bucket = { seen: number; items: Item[] };
 
-function pushReservoir(b: Bucket, item: Item, cap: number, rnd: () => number): void {
+/** `make` runs only when the item is kept, so rejected rows cost no allocation. */
+function pushReservoir(b: Bucket, make: () => Item, cap: number, rnd: () => number): void {
   b.seen++;
-  if (b.items.length < cap) b.items.push(item);
+  if (b.items.length < cap) b.items.push(make());
   else {
     const j = Math.floor(rnd() * b.seen);
-    if (j < cap) b.items[j] = item;
+    if (j < cap) b.items[j] = make();
   }
 }
 
@@ -129,7 +134,7 @@ export function sampleMatraix(opts: SampleOpts): SampleResult {
   const cb = loadCodebook();
   const shards = cachedShards();
   if (!shards.length) throw new Error("No MatrAIx shards cached. Run: synthusers fetch");
-  const filters = compileSpec(cb, opts.filter ?? {});
+  const filters = compileSpec(cb, opts.filter ?? {}, overrideValues(shards));
   const strata = (opts.stratify ?? []).map((id) => fieldIndex(cb, id));
   const ageIdx = cb.index.get("age_bracket")!;
   const minAttrs = opts.minAttrs ?? 60;
@@ -179,7 +184,7 @@ export function sampleMatraix(opts: SampleOpts): SampleResult {
       let b = buckets.get(key);
       if (!b) buckets.set(key, (b = { seen: 0, items: [] }));
       // Copy: the record is a view into the shard buffer, which is freed after the loop.
-      pushReservoir(b, { row, rec: Uint8Array.from(rec), ov, source }, opts.size, rnd);
+      pushReservoir(b, () => ({ row, rec: Uint8Array.from(rec), ov, source }), opts.size, rnd);
     }
   }
 

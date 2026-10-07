@@ -80,7 +80,7 @@ Run: `npx tsx src/cli.ts run myscenario.ts`
 
 ## Cohorts and personas
 - Pool: MatrAIx Persona 1M (~1M personas x up to 1,290 fields). One-time setup:
-  `npx tsx src/cli.ts fetch --shards all` (~810 MB; `--shards 9` for a quick 80 MB start).
+  `npx tsx src/cli.ts fetch --shards all` (~880 MB; `--shards 9` for a quick 80 MB start of synthetic personas).
   Without the cache you only get 8 fallback personas: tell the user to run `fetch`.
 - Find fields: `npx tsx src/cli.ts fields --search patience`, `fields <fieldId>` for values.
   Useful ones: `tech_savviness`, `cog_patience`, `socioeconomic_band`, `risk_tolerance`,

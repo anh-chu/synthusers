@@ -33,7 +33,7 @@ npx tsx src/cli.ts personas --filter "socioeconomic_band=Low income|Lower-middle
 ```
 The pool is MatrAIx Persona 1M (~1M personas x up to 1,290 fields). If `fetch` has not
 been run, only 8 fallback personas exist: run `npx tsx src/cli.ts fetch --shards all`
-first (~810 MB). Browse fields with `fields --search <text>`; wrong field ids or
+first (~880 MB). Browse fields with `fields --search <text>`; wrong field ids or
 values fail with suggestions.
 
 Persona shape (fields you map from):
